@@ -1,0 +1,13 @@
+ENVIRONMENT:
+  VM_PATH: '<CHANGEME>'
+
+VMWARE_API:
+  USERNAME: '<CHANGEME>'
+  PASSWORD: '<CHANGEME>'
+
+ELK_API:
+  KEY: 'ApiKey <CHANGEME>'
+
+C2:
+  Sliver: False
+  Covenant: False
