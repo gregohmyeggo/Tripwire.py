@@ -24,6 +24,12 @@ def addComment(caseID, comment):
 ## Attaches alerts to the case container for each session
 # |__ https://www.elastic.co/guide/en/kibana/master/cases-api-add-comment.html
 def attachAlerts(caseID, _id, _index, rule_id, rule_name):
+    # print(_id)
+
+    for alert in getAlertsFromCase(caseID):
+        if _id == alert['id']:
+            return
+            
     
     # https://www.elastic.co/guide/en/kibana/master/cases-api-update.html#_request_body_5
     data = {
@@ -238,6 +244,7 @@ def getRules(state):
     # print(f"{imports.colors.GREY}Enabled Rules: {len(rules)}{imports.colors.END}")
     return rules
 
+
 '''
 [+] Sliver
 Requires Filebeat configuration monitoring <path-to>/.sliver-client/history
@@ -271,6 +278,7 @@ def getSliver(command_ids, caseID, dt):
                     if hit['_id']:
                         return hit['_id']
 
+
 ## Returns a list of VM IDs; used for interacting with the /vms endpoint.
 def get_VMids():
     vmids = []
@@ -284,6 +292,7 @@ def get_VMids():
             vmids.append(_id)
 
     return vmids
+
 
 ## Returns a list of virtual machine .VMX files; required to shutdown virtual machines via vmrun.exe.
 def getVMX():
@@ -300,6 +309,7 @@ def getVMX():
                 files.append(vmx)
                 
     return files
+
 
 ## Random adj-verb-noun generator; case name generation
 def get_word():
@@ -336,6 +346,7 @@ def information():
 def log():
     log = f"{imports.colors.DEBUG}[{imports.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]{imports.colors.END}"
     return log
+
 
 def tallyRules():
     print(f"{imports.colors.GREY}Enabled Rules: {len(getRules(True))}{imports.colors.END}")
@@ -383,20 +394,24 @@ def vmrest_status():
 ## Main monitoring loop
 def red_ranger(caseID, version):
 
-    # print(f"DEBUG: {caseID}")
+    # Adds a string-list of currently enabled rules to the case
+    # Included in the updateCase() function to prevent any duplicated comments.
+    sRules = ("#### **Enabled Rules:**\n"+('\n'.join(map(str, getRules(True)))))
+    addComment(caseID, sRules)
 
-    tripped = []                           # Tracks alert UUIDs per session
+    tripped = []    # Tracks alert UUIDs per session
 
-    #DEBUG
-    # print(len(getAlertsFromCase(caseID)))
-
-    
-    if len(getAlertsFromCase(caseID)) > 0:
-        for alert in getAlertsFromCase(caseID):     # Updates tripped with the previous session's alert ids.
+    # Checks if there are any open alerts assigned to the session's case. This prevents any duplication of 
+    #   the alerts from attaching to the case or being displayed to the user.
+    if getAlertsFromCase(caseID):
+        for alert in getAlertsFromCase(caseID):
             if alert['id'] not in tripped:
                 tripped.append(alert['id'])
     
         print(f"{imports.colors.GREY}Previously Tripped Alerts: {len(getAlertsFromCase(caseID))}{imports.colors.END}")
+
+    #DEBUG
+    # print(tripped)
 
     count = 0           # Tally of alert UUIDs per session
     command_ids = []    # Tracks Sliver command _id values to prevent reuse
@@ -415,7 +430,7 @@ def red_ranger(caseID, version):
 
     # Main Loop; continues until KeyboardInterrupt
     try:
-        # Loops every 5 seconds
+        # Loops every 10 seconds
         while True:     
         
             # Elasticsearch Security Alerts
@@ -423,10 +438,17 @@ def red_ranger(caseID, version):
             hits = r.json()
 
             for hit in hits['hits']['hits']:
-
+                category = hit['_source']['kibana.alert.rule.category']
                 # !!!
                 # TBD: Redisign the logging options for each log type?
                 # Pass in the full 'hit' and filter down per log.
+
+                if category == "Custom Query Rule":
+                    host = hit['_source']['agent']['hostname']
+
+                elif category == "Threshold Rule":
+                    threshold = hit['_source']['kibana.alert.threshold_result']['count']
+                    host = "N/A"
 
                 # ELK Values; used for attaching the alert to the case.
                 rule_name = hit['_source']['kibana.alert.rule.name']
@@ -436,7 +458,7 @@ def red_ranger(caseID, version):
 
 
                 timestamp = hit['_source']['@timestamp']
-                host = hit['_source']['agent']['hostname']
+                
                 status = hit['_source']['kibana.alert.workflow_status']
                 severity = hit['_source']['kibana.alert.severity']
 
@@ -462,13 +484,13 @@ def red_ranger(caseID, version):
                                 if _id != alert['id']:
                                     attachAlerts(caseID, _id, _index, rule_id, rule_name)
                         else:
+                            
                             attachAlerts(caseID, _id, _index, rule_id, rule_name)
-                        
 
                         tripped.append(_id)
                         count+=1
 
-            imports.time.sleep(2)
+            imports.time.sleep(5)
 
 
             #-*-*-*-*-*-*-*-*-*-*-*-#
@@ -486,7 +508,7 @@ def red_ranger(caseID, version):
                 if cmd_id:
                     command_ids.append(cmd_id)
 
-                imports.time.sleep(2)
+                imports.time.sleep(5)
 
             # Covenant
             # TBD: getCovenant()
@@ -497,10 +519,10 @@ def red_ranger(caseID, version):
         if ans.upper() == 'Y':
             closeCase(caseID)
             print(f"\n[*] Closing {imports.colors.CYAN}{case['title']}{imports.colors.END}")
-            print(f'\n{log()} Total Alerts: {count}\n')
+            print(f'\n{log()} Total Alerts: {len(tripped)}\n')
             quit()
         else:
-            print(f'\n{log()} Total Alerts: {count}\n')
+            print(f'\n{log()} Total Alerts: {len(tripped)}\n')
 
 
 ## Starts virtual machines
@@ -543,10 +565,10 @@ def updateCase(caseID, status):
     url = f"{imports.variables.kibana_url}/cases"
     r = imports.requests.patch(url, headers=imports.variables.elk_headers, data=imports.json.dumps(data))
 
-    # Adds a string-list of currently enabled rules to the case
-    # Included in the updateCase() function to prevent any duplicated comments.
-    sRules = ("#### **Enabled Rules:**\n"+('\n'.join(map(str, getRules(True)))))
-    addComment(caseID, sRules)
+    # # Adds a string-list of currently enabled rules to the case
+    # # Included in the updateCase() function to prevent any duplicated comments.
+    # sRules = ("#### **Enabled Rules:**\n"+('\n'.join(map(str, getRules(True)))))
+    # addComment(caseID, sRules)
 
     print(f"\n[*] \"We're getting things ready\"")
 

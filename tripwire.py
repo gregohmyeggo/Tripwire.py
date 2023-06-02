@@ -20,27 +20,15 @@ imports.functions.title()
 parser = imports.argparse.ArgumentParser()
 parser.add_argument('-s', '--start', action="store_true", help="Starts virtual machines")
 parser.add_argument('-x', '--stop', action="store_true", help="Starts virtual machines")
-parser.add_argument('-l', '--launch', nargs='*', action="store", dest='case_name', help="Red Ranger will start monitoring for tripped alerts")
+parser.add_argument('-l', '--launch', nargs='*', action="store", dest='case_name', required=False, help="Red Ranger will start monitoring for tripped alerts")
 parser.add_argument('-i', '--information', action="store_true", help="Additional Information")
 parser.add_argument('-n', '--name', type=str, help="User supplied case name")
 args = parser.parse_args()
 
-# If user directly passes a case name to be used.
-case_name = args.case_name
-# print(len(args.case_name))
-if case_name:
-    case_name = str(args.case_name)
-    # print(f'default: {case_name}')
-elif len(args.case_name) == 0:
-    case_name = "None"
-    # print(f'zero: {case_name}')
-else:
-    case_name = imports.functions.get_word()
-    # print(f'get word: {case_name}')
-
 # Main Loop
 def main():
-
+    case_name = str(args.case_name)
+        
     if args.information:        
         imports.functions.information()
 
@@ -69,7 +57,17 @@ def main():
     # Launches the lab. Enables Red Ranger to display alert information.
     # Will automatically continue any un-closed cases from the previous session.
     elif case_name:
-                # ELK connection check:
+        if case_name == None or args.case_name == None:
+            imports.functions.information()
+            quit()
+            
+        if len(args.case_name) == 0:
+            case_name = "None"
+
+        else:
+            case_name = imports.functions.get_word()
+        
+        # ELK connection check:
         if imports.functions.check_elk() != True:
             print(f"{imports.colors.DEBUG}[!] ELK connection failed{imports.colors.END}\n")
 
@@ -90,11 +88,14 @@ def main():
                 imports.functions.red_ranger(new_case['id'], new_case['version'])
 
             elif open_case:
+
+                # Prints a list of open cases.
                 print(f"\nOpen Cases:")
                 for case in open_case:
                     title = case['title']
                     print(f"{(open_case.index(case))+1} | {imports.colors.CYAN}{case['title']}{imports.colors.END}")
                 
+                # User selects case or creates new case.
                 choice = input("\nSelect case [number] to continue or [new] for new: ")
 
                 if choice.lower() == 'new':
@@ -114,7 +115,7 @@ def main():
                 for case in open_case:
                     if (open_case.index(case) == int(choice)-1):
                     # if (str(case['title']) == choice.lower()) or (open_case.index(case) == int(choice)-1):
-                        print(f"\nContinuing {imports.colors.CYAN}{case['title']}{imports.colors.END}")
+                        print(f"\nResuming {imports.colors.CYAN}{case['title']}{imports.colors.END}")
                         imports.functions.tallyRules()
                         # imports.functions.barbed_wire()
                         imports.functions.red_ranger(case['id'], case['version'])
